@@ -1,0 +1,17 @@
+{
+  "name": "imn-signaling-server",
+  "version": "1.0.0",
+  "description": "WebSocket signaling server for Imn P2P chat",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

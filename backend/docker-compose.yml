@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  signaling:
+    build: ./signaling-server
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').createConnection(8080,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  coturn:
+    image: coturn/coturn:latest
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf
+    command: -c /etc/coturn/turnserver.conf
+
+volumes:
+  coturn_data:
