@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/utils/app_theme.dart';
 import 'app.dart';
 import 'core/providers.dart';
+import 'services/notifications/notification_service.dart';
+import 'services/background/background_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,6 +19,12 @@ void main() async {
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
+
+  // Initialize Notifications and 24/7 Background Service
+  try {
+    await NotificationService().initialize();
+    await ImnBackgroundService().initialize();
+  } catch (_) {}
 
   runApp(const ProviderScope(child: ImnApp()));
 }

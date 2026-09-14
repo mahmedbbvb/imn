@@ -38,6 +38,10 @@ dependencies:
   web_socket_channel: ^3.0.1
   connectivity_plus: ^6.0.3
 
+  # Background & Notifications
+  flutter_local_notifications: ^17.1.2
+  flutter_background_service: ^5.0.5
+
   # Files & Media
   file_picker: ^8.0.7
   image_picker: ^1.1.2
