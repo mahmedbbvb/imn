@@ -76,7 +76,7 @@ final networkMonitorProvider = Provider<NetworkMonitorService>((ref) {
 //                            e.g. 'ws://192.168.1.100:8080'
 //  Production server       → 'wss://signaling.yourdomain.com:8080'
 //
-const signalingServerUrl = 'ws://10.0.2.2:8080';
+const signalingServerUrl = 'wss://imn-production.up.railway.app';
 
 final signalingServiceProvider = Provider<SignalingService>((ref) {
   final service = SignalingService(serverUrl: signalingServerUrl);
