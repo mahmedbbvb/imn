@@ -101,6 +101,14 @@ wss.on('connection', (ws, req) => {
         handleIceCandidate(ws, sessionId, data);
         break;
 
+      case 'chatMessage':
+        handleChatMessage(ws, targetDeviceId, data);
+        break;
+
+      case 'callSignal':
+        handleCallSignal(ws, targetDeviceId, data);
+        break;
+
       default:
         sendError(ws, `Unknown type: ${type}`);
     }
@@ -194,6 +202,56 @@ function handleContactRequestResponse(ws, targetDeviceId, data) {
     data,
   });
   console.log(`[CONTACT_RESP] Forwarded ${ws.deviceId} → ${targetDeviceId} accepted=${data && data.accepted}`);
+}
+
+// ── Encrypted Chat Relay ──────────────────────────────────────────────────────
+
+function handleChatMessage(ws, targetDeviceId, data) {
+  if (!targetDeviceId) {
+    sendError(ws, 'targetDeviceId required for chatMessage');
+    return;
+  }
+  const targetWs = devices.get(targetDeviceId);
+  if (!targetWs || targetWs.readyState !== WebSocket.OPEN) {
+    send(ws, {
+      type: 'chatMessageStatus',
+      data: { status: 'offline', messageId: data && data.messageId },
+    });
+    return;
+  }
+  send(targetWs, {
+    type: 'chatMessage',
+    fromDeviceId: ws.deviceId,
+    data,
+  });
+  send(ws, {
+    type: 'chatMessageStatus',
+    data: { status: 'delivered', messageId: data && data.messageId },
+  });
+  console.log(`[CHAT_RELAY] ${ws.deviceId} → ${targetDeviceId} msgId=${data && data.messageId}`);
+}
+
+// ── Call Signaling Relay ──────────────────────────────────────────────────────
+
+function handleCallSignal(ws, targetDeviceId, data) {
+  if (!targetDeviceId) {
+    sendError(ws, 'targetDeviceId required for callSignal');
+    return;
+  }
+  const targetWs = devices.get(targetDeviceId);
+  if (!targetWs || targetWs.readyState !== WebSocket.OPEN) {
+    send(ws, {
+      type: 'callSignalStatus',
+      data: { status: 'offline', callAction: data && data.action },
+    });
+    return;
+  }
+  send(targetWs, {
+    type: 'callSignal',
+    fromDeviceId: ws.deviceId,
+    data,
+  });
+  console.log(`[CALL_SIGNAL] ${ws.deviceId} → ${targetDeviceId} action=${data && data.action}`);
 }
 
 // ── WebRTC Session Handlers ───────────────────────────────────────────────────
