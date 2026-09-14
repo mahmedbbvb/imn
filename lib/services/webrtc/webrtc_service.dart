@@ -31,7 +31,7 @@ class WebRTCMessage {
       );
 }
 
-/// Manages a single WebRTC PeerConnection and DataChannel.
+/// Manages WebRTC PeerConnection, DataChannel, and MediaStreams for voice/video calls.
 class WebRTCService {
   static const _iceServers = [
     {'urls': 'stun:stun.l.google.com:19302'},
@@ -43,26 +43,44 @@ class WebRTCService {
 
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _dataChannel;
+  MediaStream? _localStream;
+  MediaStream? _remoteStream;
+
   final SignalingService _signaling;
 
   final _connectionStateController =
       StreamController<PeerConnectionState>.broadcast();
   final _messageController =
       StreamController<WebRTCMessage>.broadcast();
+  final _remoteStreamController =
+      StreamController<MediaStream>.broadcast();
+  final _localStreamController =
+      StreamController<MediaStream>.broadcast();
 
   PeerConnectionState _state = PeerConnectionState.idle;
   String? _currentSessionId;
   bool _isOffer = false;
+  bool _isMicMuted = false;
+  bool _isCameraEnabled = true;
+  bool _isSpeakerphoneOn = false;
 
   WebRTCService({required SignalingService signaling})
       : _signaling = signaling;
 
-  // ── Streams ──────────────────────────────────────────────────
+  // ── Streams & Getters ────────────────────────────────────────
   Stream<PeerConnectionState> get connectionState =>
       _connectionStateController.stream;
   Stream<WebRTCMessage> get messages => _messageController.stream;
+  Stream<MediaStream> get onRemoteStream => _remoteStreamController.stream;
+  Stream<MediaStream> get onLocalStream => _localStreamController.stream;
+
   PeerConnectionState get state => _state;
   bool get isConnected => _state == PeerConnectionState.connected;
+  MediaStream? get localStream => _localStream;
+  MediaStream? get remoteStream => _remoteStream;
+  bool get isMicMuted => _isMicMuted;
+  bool get isCameraEnabled => _isCameraEnabled;
+  bool get isSpeakerphoneOn => _isSpeakerphoneOn;
 
   // ── Init PeerConnection ──────────────────────────────────────
 
@@ -111,6 +129,14 @@ class WebRTCService {
       _setupDataChannel(channel);
     };
 
+    _peerConnection!.onTrack = (event) {
+      appLogger.i('Remote track received: ${event.track.kind}');
+      if (event.streams.isNotEmpty) {
+        _remoteStream = event.streams[0];
+        _remoteStreamController.add(_remoteStream!);
+      }
+    };
+
     _peerConnection!.onConnectionState = (state) {
       appLogger.d('PeerConnection state: $state');
     };
@@ -136,13 +162,84 @@ class WebRTCService {
     };
   }
 
+  // ── Media Stream Setup (Audio/Video Calls) ────────────────────
+
+  Future<MediaStream> startLocalStream({required bool isVideo}) async {
+    final mediaConstraints = {
+      'audio': true,
+      'video': isVideo
+          ? {
+              'mandatory': {
+                'minWidth': '640',
+                'minHeight': '480',
+                'minFrameRate': '30',
+              },
+              'facingMode': 'user',
+              'optional': [],
+            }
+          : false,
+    };
+
+    _localStream =
+        await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    _localStreamController.add(_localStream!);
+
+    if (_peerConnection != null) {
+      for (final track in _localStream!.getTracks()) {
+        await _peerConnection!.addTrack(track, _localStream!);
+      }
+    }
+
+    _isMicMuted = false;
+    _isCameraEnabled = isVideo;
+    return _localStream!;
+  }
+
+  void toggleMicrophone(bool mute) {
+    if (_localStream != null) {
+      for (final track in _localStream!.getAudioTracks()) {
+        track.enabled = !mute;
+      }
+      _isMicMuted = mute;
+    }
+  }
+
+  void toggleCamera(bool enable) {
+    if (_localStream != null) {
+      for (final track in _localStream!.getVideoTracks()) {
+        track.enabled = enable;
+      }
+      _isCameraEnabled = enable;
+    }
+  }
+
+  Future<void> switchCamera() async {
+    if (_localStream != null && _localStream!.getVideoTracks().isNotEmpty) {
+      final track = _localStream!.getVideoTracks().first;
+      await Helper.switchCamera(track);
+    }
+  }
+
+  void toggleSpeakerphone(bool enable) {
+    if (_localStream != null) {
+      for (final track in _localStream!.getAudioTracks()) {
+        track.enableSpeakerphone(enable);
+      }
+      _isSpeakerphoneOn = enable;
+    }
+  }
+
   // ── Offer (Initiator) ────────────────────────────────────────
 
-  Future<String> createOffer(String sessionId) async {
+  Future<String> createOffer(String sessionId, {bool enableMedia = false, bool isVideo = false}) async {
     _currentSessionId = sessionId;
     _isOffer = true;
     _setState(PeerConnectionState.connecting);
     await _createPeerConnection();
+
+    if (enableMedia) {
+      await startLocalStream(isVideo: isVideo);
+    }
 
     // Create DataChannel as the initiator
     final dcInit = RTCDataChannelInit()
@@ -152,14 +249,12 @@ class WebRTCService {
     _setupDataChannel(_dataChannel!);
 
     final offer = await _peerConnection!.createOffer({
-      'offerToReceiveAudio': false,
-      'offerToReceiveVideo': false,
+      'offerToReceiveAudio': enableMedia ? true : false,
+      'offerToReceiveVideo': isVideo ? true : false,
     });
     await _peerConnection!.setLocalDescription(offer);
 
-    // Wait for initial ICE gathering
     await Future.delayed(const Duration(milliseconds: 1000));
-    // Return the current (possibly trickled) local description
     final localDesc = await _peerConnection!.getLocalDescription();
     return localDesc?.sdp ?? offer.sdp!;
   }
@@ -171,11 +266,15 @@ class WebRTCService {
 
   // ── Answer (Responder) ───────────────────────────────────────
 
-  Future<String> createAnswer(String sessionId, String offerSdp) async {
+  Future<String> createAnswer(String sessionId, String offerSdp, {bool enableMedia = false, bool isVideo = false}) async {
     _currentSessionId = sessionId;
     _isOffer = false;
     _setState(PeerConnectionState.connecting);
     await _createPeerConnection();
+
+    if (enableMedia) {
+      await startLocalStream(isVideo: isVideo);
+    }
 
     final offer = RTCSessionDescription(offerSdp, 'offer');
     await _peerConnection!.setRemoteDescription(offer);
@@ -222,7 +321,7 @@ class WebRTCService {
     await _dataChannel!.send(RTCDataChannelMessage.fromBinary(bytes));
   }
 
-  // ── ICE Restart (network change) ─────────────────────────────
+  // ── ICE Restart ──────────────────────────────────────────────
 
   Future<String?> restartIce() async {
     if (_peerConnection == null) return null;
@@ -239,6 +338,17 @@ class WebRTCService {
   // ── Cleanup ──────────────────────────────────────────────────
 
   Future<void> close() async {
+    _localStream?.getTracks().forEach((track) {
+      track.stop();
+    });
+    _remoteStream?.getTracks().forEach((track) {
+      track.stop();
+    });
+    await _localStream?.dispose();
+    await _remoteStream?.dispose();
+    _localStream = null;
+    _remoteStream = null;
+
     await _dataChannel?.close();
     await _peerConnection?.close();
     _dataChannel = null;
@@ -251,6 +361,8 @@ class WebRTCService {
     close();
     _connectionStateController.close();
     _messageController.close();
+    _remoteStreamController.close();
+    _localStreamController.close();
   }
 
   void _setState(PeerConnectionState newState) {

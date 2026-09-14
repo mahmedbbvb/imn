@@ -11,6 +11,7 @@ import '../../services/webrtc/webrtc_service.dart';
 import '../../services/webrtc/connection_manager.dart';
 import '../../features/chat/message_service.dart';
 import '../../features/files/file_transfer_service.dart';
+import '../../services/webrtc/call_service.dart';
 
 // ── Core Services ────────────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ final messageServiceProvider = Provider<MessageService>((ref) {
     db: ref.read(databaseProvider),
     encryption: ref.read(encryptionServiceProvider),
     webrtc: ref.read(webrtcServiceProvider),
+    signaling: ref.read(signalingServiceProvider),
     localDeviceId: identity.deviceId,
   );
 });
@@ -129,6 +131,17 @@ final fileTransferProvider = Provider<FileTransferService>((ref) {
   final service = FileTransferService(
     encryption: ref.read(encryptionServiceProvider),
     webrtc: ref.read(webrtcServiceProvider),
+  );
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+// ── Call Service ─────────────────────────────────────────────────────────────
+
+final callServiceProvider = Provider<CallService>((ref) {
+  final service = CallService(
+    webrtc: ref.read(webrtcServiceProvider),
+    signaling: ref.read(signalingServiceProvider),
   );
   ref.onDispose(() => service.dispose());
   return service;

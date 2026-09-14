@@ -22,6 +22,11 @@ enum SignalingMessageType {
   contactRequest,
   contactRequestResponse,
   contactRequestStatus,
+  // Encrypted Chat Relay & Call Signaling
+  chatMessage,
+  chatMessageStatus,
+  callSignal,
+  callSignalStatus,
   // Errors
   error,
 }
@@ -203,6 +208,26 @@ class SignalingService {
       type: SignalingMessageType.iceCandidate,
       sessionId: sessionId,
       data: candidate,
+    ));
+  }
+
+  // ── Encrypted Chat Relay ──────────────────────────────────────
+
+  void sendChatMessage(String targetDeviceId, Map<String, dynamic> data) {
+    send(SignalingMessage(
+      type: SignalingMessageType.chatMessage,
+      targetDeviceId: targetDeviceId,
+      data: data,
+    ));
+  }
+
+  // ── Call Signaling Relay ──────────────────────────────────────
+
+  void sendCallSignal(String targetDeviceId, Map<String, dynamic> data) {
+    send(SignalingMessage(
+      type: SignalingMessageType.callSignal,
+      targetDeviceId: targetDeviceId,
+      data: data,
     ));
   }
 
