@@ -14,66 +14,77 @@ class NotificationService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
+    try {
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: androidSettings);
 
-    await _notificationsPlugin.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (details) {
-        appLogger.i('Notification clicked: ${details.payload}');
-      },
-    );
+      await _notificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (details) {
+          appLogger.i('Notification clicked: ${details.payload}');
+        },
+      );
 
-    // Create Notification Channels
-    final androidPlugin = FlutterLocalNotificationsPlugin();
+      final androidImplementation =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
 
-    // 1. Calls Channel (Default Phone Ringtone, Heads-Up Banner, Max Importance)
-    const callChannel = AndroidNotificationChannel(
-      'imn_calls_channel',
-      'المكالمات الواردة',
-      description: 'إشعارات المكالمات الصوتية والفيديو الواردة',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-    );
+      if (androidImplementation != null) {
+        // 0. Foreground Service Channel
+        const foregroundChannel = AndroidNotificationChannel(
+          'imn_foreground_channel',
+          'خدمة الخلفية',
+          description: 'إشعار تشغيل الخدمة في الخلفية 24/7',
+          importance: Importance.low,
+          playSound: false,
+        );
 
-    // 2. Chat Messages Channel (Default Notification Sound)
-    const messageChannel = AndroidNotificationChannel(
-      'imn_messages_channel',
-      'الرسائل الجديدة',
-      description: 'إشعارات الرسائل والوسائط الجديدة',
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
+        // 1. Calls Channel
+        const callChannel = AndroidNotificationChannel(
+          'imn_calls_channel',
+          'المكالمات الواردة',
+          description: 'إشعارات المكالمات الصوتية والفيديو الواردة',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+        );
 
-    // 3. Contact Requests Channel
-    const requestChannel = AndroidNotificationChannel(
-      'imn_requests_channel',
-      'طلبات المراسلة',
-      description: 'إشعارات طلبات إضافة جهات الاتصال الجديدة',
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
+        // 2. Chat Messages Channel
+        const messageChannel = AndroidNotificationChannel(
+          'imn_messages_channel',
+          'الرسائل الجديدة',
+          description: 'إشعارات الرسائل والوسائط الجديدة',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        );
 
-    final androidImplementation =
-        androidPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+        // 3. Contact Requests Channel
+        const requestChannel = AndroidNotificationChannel(
+          'imn_requests_channel',
+          'طلبات المراسلة',
+          description: 'إشعارات طلبات إضافة جهات الاتصال الجديدة',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        );
 
-    if (androidImplementation != null) {
-      await androidImplementation.createNotificationChannel(callChannel);
-      await androidImplementation.createNotificationChannel(messageChannel);
-      await androidImplementation.createNotificationChannel(requestChannel);
-      await androidImplementation.requestNotificationsPermission();
+        await androidImplementation.createNotificationChannel(foregroundChannel);
+        await androidImplementation.createNotificationChannel(callChannel);
+        await androidImplementation.createNotificationChannel(messageChannel);
+        await androidImplementation.createNotificationChannel(requestChannel);
+        await androidImplementation.requestNotificationsPermission();
+      }
+
+      _isInitialized = true;
+      appLogger.i('NotificationService initialized successfully');
+    } catch (e) {
+      appLogger.e('NotificationService init error', error: e);
     }
-
-    _isInitialized = true;
-    appLogger.i('NotificationService initialized successfully');
   }
 
-  // ── Show Call Notification (Ringtone Sound, Heads-up) ────────
+  // ── Show Call Notification (System Ringtone Sound, Heads-up) ──
 
   Future<void> showIncomingCallNotification({
     required int notificationId,
@@ -81,7 +92,7 @@ class NotificationService {
     required String callId,
     required bool isVideo,
   }) async {
-    final androidDetails = AndroidNotificationDetails(
+    const androidDetails = AndroidNotificationDetails(
       'imn_calls_channel',
       'المكالمات الواردة',
       channelDescription: 'إشعارات المكالمات الصوتية والفيديو الواردة',
@@ -89,14 +100,13 @@ class NotificationService {
       priority: Priority.max,
       fullScreenIntent: true,
       audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
-      sound: const RawResourceAndroidNotificationSound('ringtone'),
       category: AndroidNotificationCategory.call,
       visibility: NotificationVisibility.public,
       ongoing: true,
       autoCancel: false,
     );
 
-    final details = NotificationDetails(android: androidDetails);
+    const details = NotificationDetails(android: androidDetails);
     final callType = isVideo ? 'مكالمة فيديو' : 'مكالمة صوتية';
 
     await _notificationsPlugin.show(

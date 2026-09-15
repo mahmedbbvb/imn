@@ -13,23 +13,25 @@ class ImnBackgroundService {
   ImnBackgroundService._internal();
 
   Future<void> initialize() async {
-    final service = FlutterBackgroundService();
+    try {
+      final service = FlutterBackgroundService();
 
-    await service.configure(
-      androidConfiguration: AndroidConfiguration(
-        onStart: _onStart,
-        autoStart: true,
-        isForegroundMode: true,
-        notificationChannelId: 'imn_foreground_channel',
-        initialNotificationTitle: 'Imn - متصل في الخلفية',
-        initialNotificationContent: 'خدمة التشفير التلقائي تعمل على مدار 24 ساعة',
-      ),
-      iosConfiguration: IosConfiguration(
-        autoStart: true,
-        onForeground: _onStart,
-        onBackground: _onIosBackground,
-      ),
-    );
+      await service.configure(
+        androidConfiguration: AndroidConfiguration(
+          onStart: _onStart,
+          autoStart: true,
+          isForegroundMode: true,
+          notificationChannelId: 'imn_foreground_channel',
+          initialNotificationTitle: 'Imn - متصل في الخلفية',
+          initialNotificationContent: 'خدمة التشفير التلقائي تعمل على مدار 24 ساعة',
+        ),
+        iosConfiguration: IosConfiguration(
+          autoStart: true,
+          onForeground: _onStart,
+          onBackground: _onIosBackground,
+        ),
+      );
+    } catch (_) {}
   }
 }
 
@@ -41,65 +43,69 @@ Future<bool> _onIosBackground(ServiceInstance service) async {
 
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) async {
-  DartPluginRegistrant.ensureInitialized();
-  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    DartPluginRegistrant.ensureInitialized();
+    WidgetsFlutterBinding.ensureInitialized();
 
-  await NotificationService().initialize();
+    await NotificationService().initialize();
 
-  // Signaling Connection in Background Isolate
-  final signaling = SignalingService(serverUrl: signalingServerUrl);
-  await signaling.connect();
+    // Signaling Connection in Background Isolate
+    final signaling = SignalingService(serverUrl: signalingServerUrl);
+    await signaling.connect();
 
-  signaling.messages?.listen((msg) async {
-    switch (msg.type) {
-      case SignalingMessageType.chatMessage:
-        final data = msg.data;
-        if (data != null) {
-          final sender = msg.fromDeviceId ?? 'مستخدم';
-          final messageId = data['messageId'] as String? ?? 'msg';
-          await NotificationService().showChatMessageNotification(
-            notificationId: messageId.hashCode,
-            senderName: 'رسالة مشفرة جديدة',
-            messageText: 'تلقيت رسالة من $sender',
-          );
+    signaling.messages?.listen((msg) async {
+      try {
+        switch (msg.type) {
+          case SignalingMessageType.chatMessage:
+            final data = msg.data;
+            if (data != null) {
+              final sender = msg.fromDeviceId ?? 'مستخدم';
+              final messageId = data['messageId'] as String? ?? 'msg';
+              await NotificationService().showChatMessageNotification(
+                notificationId: messageId.hashCode,
+                senderName: 'رسالة مشفرة جديدة',
+                messageText: 'تلقيت رسالة من $sender',
+              );
+            }
+            break;
+
+          case SignalingMessageType.contactRequest:
+            final data = msg.data;
+            final name = data?['fromDisplayName'] as String? ?? 'مستخدم';
+            await NotificationService().showContactRequestNotification(
+              notificationId: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              senderName: name,
+            );
+            break;
+
+          case SignalingMessageType.callSignal:
+            final data = msg.data;
+            if (data != null && data['action'] == 'offer') {
+              final callerName = data['callerName'] as String? ?? 'مستخدم';
+              final callId = data['callId'] as String? ?? 'call';
+              final isVideo = data['isVideo'] as bool? ?? false;
+              await NotificationService().showIncomingCallNotification(
+                notificationId: callId.hashCode,
+                callerName: callerName,
+                callId: callId,
+                isVideo: isVideo,
+              );
+            } else if (data != null &&
+                (data['action'] == 'ended' || data['action'] == 'reject')) {
+              final callId = data['callId'] as String? ?? 'call';
+              await NotificationService().cancelNotification(callId.hashCode);
+            }
+            break;
+
+          default:
+            break;
         }
-        break;
+      } catch (_) {}
+    });
 
-      case SignalingMessageType.contactRequest:
-        final data = msg.data;
-        final name = data?['fromDisplayName'] as String? ?? 'مستخدم';
-        await NotificationService().showContactRequestNotification(
-          notificationId: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          senderName: name,
-        );
-        break;
-
-      case SignalingMessageType.callSignal:
-        final data = msg.data;
-        if (data != null && data['action'] == 'offer') {
-          final callerName = data['callerName'] as String? ?? 'مستخدم';
-          final callId = data['callId'] as String? ?? 'call';
-          final isVideo = data['isVideo'] as bool? ?? false;
-          await NotificationService().showIncomingCallNotification(
-            notificationId: callId.hashCode,
-            callerName: callerName,
-            callId: callId,
-            isVideo: isVideo,
-          );
-        } else if (data != null &&
-            (data['action'] == 'ended' || data['action'] == 'reject')) {
-          final callId = data['callId'] as String? ?? 'call';
-          await NotificationService().cancelNotification(callId.hashCode);
-        }
-        break;
-
-      default:
-        break;
-    }
-  });
-
-  service.on('stopService').listen((event) {
-    signaling.disconnect();
-    service.stopSelf();
-  });
+    service.on('stopService').listen((event) {
+      signaling.disconnect();
+      service.stopSelf();
+    });
+  } catch (_) {}
 }
